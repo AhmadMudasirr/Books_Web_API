@@ -2,12 +2,15 @@
 using BooksAPI.DTOs;
 using BooksAPI.Encryption;
 using BooksAPI.Models;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
+using System.IO;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Net.Http.Formatting;
+using System.Text;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
@@ -27,16 +30,11 @@ namespace BooksAPI.Controllers
         {
             List<BookDto> bookdata = await db.Get();
 
-            foreach (BookDto bdto in bookdata)
-            {
-                bdto.Title = DataEncryption.Decrypt(Convert.FromBase64String(bdto.Title));
-                bdto.Genre = DataEncryption.Decrypt(Convert.FromBase64String(bdto.Genre));
-            }
+            string bookDataSerialized = JsonConvert.SerializeObject(bookdata);
+            string encryptedBookData = DataEncryption.Encrypt(bookDataSerialized);
 
-            return Content(System.Net.HttpStatusCode.OK, bookdata, new JsonMediaTypeFormatter());
-
+            return Content(System.Net.HttpStatusCode.OK, encryptedBookData, new JsonMediaTypeFormatter());
         }
-
 
 
         //https://localhost:44381/api/books/ID
@@ -44,24 +42,21 @@ namespace BooksAPI.Controllers
         [Route("{id:int}")]
         public async Task<IHttpActionResult> GetBook(int id)
         {
-
             Book book = await db.GetById(id);
 
-            book.Title = DataEncryption.Decrypt(Convert.FromBase64String(book.Title));
-            book.Genre = DataEncryption.Decrypt(Convert.FromBase64String(book.Genre));
-            book.Description = DataEncryption.Decrypt(Convert.FromBase64String(book.Description));
+            string bookDataSerialized = JsonConvert.SerializeObject(book);
+            string encryptedBookData = DataEncryption.Encrypt(bookDataSerialized);
 
-            if (book.Author == null && book.Id == 0 && book.Genre == null && book.Description == null && book.AuthorId == 0 && book.Title == null && book.Price == 0)
+            if (string.IsNullOrEmpty(encryptedBookData))
             {
-                //  return Content(System.Net.HttpStatusCode.NotFound, book.Id, new JsonMediaTypeFormatter());
-                return Content(System.Net.HttpStatusCode.NotFound, "Book having ID : " + id + " Not found!", new JsonMediaTypeFormatter());
-            }
 
+                return BadRequest("Unable to Fetch Data!.");
+
+            }
             else
             {
-                return Content(System.Net.HttpStatusCode.OK, book, new JsonMediaTypeFormatter());
+                return Content(System.Net.HttpStatusCode.OK, encryptedBookData, new JsonMediaTypeFormatter());
             }
-
         }
 
 
@@ -69,13 +64,29 @@ namespace BooksAPI.Controllers
         //https://localhost:44381/api/books/createBook
         [HttpPost]
         [Route("createBook")]
-        public async Task<IHttpActionResult> CreateBook([FromBody] NewBookDto newBook)
+        public async Task<IHttpActionResult> CreateBook()
         {
+            string encryptedJsonData;
+            using (var reader = new StreamReader(await Request.Content.ReadAsStreamAsync(), Encoding.UTF8))
+            {
+                encryptedJsonData = await reader.ReadToEndAsync();
+            }
 
-            newBook.Title = DataEncryption.Encrypt(newBook.Title);
-            newBook.Genre = DataEncryption.Encrypt(newBook.Genre);
-            newBook.Description = DataEncryption.Encrypt(newBook.Description);
-            int data = await db.Create(newBook.Title, newBook.Genre, newBook.Price, newBook.Description, newBook.AuthorId);
+            if (string.IsNullOrEmpty(encryptedJsonData))
+            {
+                return BadRequest("Invalid Data. Null Passed");
+            }
+
+            string decryptedJsonData = DataEncryption.Decrypt(Convert.FromBase64String(encryptedJsonData));
+
+            NewBookDto jsonNewBookDeserialized = JsonConvert.DeserializeObject<NewBookDto>(decryptedJsonData);
+
+            int data = await db.Create(
+                jsonNewBookDeserialized.Title,
+                jsonNewBookDeserialized.Genre,
+                jsonNewBookDeserialized.Price,
+                jsonNewBookDeserialized.Description,
+                jsonNewBookDeserialized.AuthorId);
 
             if (data == 0)
             {
@@ -83,10 +94,8 @@ namespace BooksAPI.Controllers
             }
             else
             {
-
-                string title = DataEncryption.Decrypt(Convert.FromBase64String(newBook.Title));
-
-                return Content(System.Net.HttpStatusCode.OK, "New Book Added with Title : " + title + ". ", new JsonMediaTypeFormatter());
+                string encryptedResponse = DataEncryption.Encrypt(jsonNewBookDeserialized.Title);
+                return Content(System.Net.HttpStatusCode.OK, "New Book Added with Title : " + encryptedResponse + ". ", new JsonMediaTypeFormatter());
             }
         }
 
@@ -95,17 +104,29 @@ namespace BooksAPI.Controllers
         //https://localhost:44381/api/books/ID
         [HttpPut]
         [Route("{id:int}")]
-        public async Task<IHttpActionResult> UpdateBook(int id, [FromBody] NewBookUpdateDto newBookUpdate)
+        public async Task<IHttpActionResult> UpdateBook([FromUri] int id)
         {
-            //newBookUpdate.Title = DataEncryption.Encrypt(newBookUpdate.Title);
-            //newBookUpdate.Genre = DataEncryption.Encrypt(newBookUpdate.Genre);
-            //newBookUpdate.Description = DataEncryption.Encrypt(newBookUpdate.Description);
+            string encryptedJsonText;
+            using (var reader = new StreamReader(await Request.Content.ReadAsStreamAsync(), Encoding.UTF8))
+            {
+                encryptedJsonText = await reader.ReadToEndAsync();
+            }
 
-            newBookUpdate.Title = DataEncryption.Encrypt(newBookUpdate.Title);
-            newBookUpdate.Genre = DataEncryption.Encrypt(newBookUpdate.Genre);
-            newBookUpdate.Description = DataEncryption.Encrypt(newBookUpdate.Description);
+            if (string.IsNullOrEmpty(encryptedJsonText))
+            {
+                return BadRequest("Invalid Data. Null Passed");
+            }
 
-            int data = await db.UpdateBook(id, newBookUpdate.Title, newBookUpdate.Genre, newBookUpdate.Price, newBookUpdate.Description);
+            string decryptedJsonData = DataEncryption.Decrypt(Convert.FromBase64String(encryptedJsonText));
+
+            NewBookUpdateDto jsonNewBookUpdateDeserialized = JsonConvert.DeserializeObject<NewBookUpdateDto>(decryptedJsonData);
+
+            int data = await db.UpdateBook(
+                id,
+                jsonNewBookUpdateDeserialized.Title,
+                jsonNewBookUpdateDeserialized.Genre,
+                jsonNewBookUpdateDeserialized.Price,
+                jsonNewBookUpdateDeserialized.Description);
 
             if (data == 0)
             {
@@ -116,6 +137,7 @@ namespace BooksAPI.Controllers
                 return Content(System.Net.HttpStatusCode.OK, "Book having ID :" + id + " Updated Successfully ! ", new JsonMediaTypeFormatter());
             }
         }
+
 
 
         //https://localhost:44381/api/books/ID
@@ -132,12 +154,9 @@ namespace BooksAPI.Controllers
             }
             else
             {
-
                 return Content(System.Net.HttpStatusCode.OK, "Book with ID : " + id + ", Delete Successfully.", new JsonMediaTypeFormatter());
-
             }
         }
-
     }
 }
 

@@ -7,12 +7,15 @@ namespace BooksAPI.Encryption
 {
     public class DataEncryption
     {
-        private static readonly byte[] ProcessKey = new byte[32];
+        private static readonly string key = "em8cI7VHpjnb+LxF4Pob8kuObqOyxfHpkLHL+F5qOtg=";
+
+        private static readonly byte[] ProcessKey = Convert.FromBase64String(key);
         private static readonly byte[] ProcessIV = new byte[16];
         public void GenerateKeys()
         {
             var rng = new RNGCryptoServiceProvider();
-            rng.GetBytes(ProcessKey);
+            // rng.GetBytes(ProcessKey);
+            // Debug.WriteLine(ProcessKey);
             rng.GetBytes(ProcessIV);
         }
 
@@ -32,6 +35,7 @@ namespace BooksAPI.Encryption
                 {
                     aes.Key = ProcessKey;
                     aes.IV = ProcessIV;
+                    //   aes.Padding = PaddingMode.PKCS7;
 
                     ICryptoTransform encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
 
@@ -53,8 +57,6 @@ namespace BooksAPI.Encryption
             }
         }
 
-
-
         public static string Decrypt(byte[] cipherText)
         {
             using (Aes aes = Aes.Create())
@@ -62,6 +64,7 @@ namespace BooksAPI.Encryption
 
                 aes.Key = ProcessKey;
                 aes.IV = ProcessIV;
+                //  aes.Padding = PaddingMode.PKCS7;
 
                 ICryptoTransform decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
 
@@ -82,5 +85,7 @@ namespace BooksAPI.Encryption
                 }
             }
         }
+
     }
+
 }
